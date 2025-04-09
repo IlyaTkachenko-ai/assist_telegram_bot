@@ -3,6 +3,7 @@ import telebot
 import openai
 from flask import Flask, request
 from dotenv import load_dotenv
+import time
 
 load_dotenv(".env")
 
@@ -32,7 +33,6 @@ def handle_message(message):
     run = openai.beta.threads.runs.create(thread_id=thread.id, assistant_id=ASSISTANT_ID)
 
     # ожидание завершения выполнения (упрощённо)
-    import time
     while True:
         run_status = openai.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
         if run_status.status == "completed":
@@ -43,7 +43,5 @@ def handle_message(message):
     answer = messages.data[0].content[0].text.value
     bot.send_message(message.chat.id, answer)
 
-    return
-
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(host="0.0.0.0", port=5000)
