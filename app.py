@@ -1,69 +1,45 @@
 import os
-import telebot
-import openai
+import json
 from flask import Flask, request
 from dotenv import load_dotenv
+import telebot
 
-# Загружаем переменные окружения
+# Загрузка переменных окружения из .env
 load_dotenv()
-
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 
-# Логируем успешную загрузку переменных
-print("✅ TELEGRAM_TOKEN loaded:", bool(TELEGRAM_TOKEN))
-print("✅ OPENAI_API_KEY loaded:", bool(OPENAI_API_KEY))
-print("✅ ASSISTANT_ID loaded:", bool(ASSISTANT_ID))
+# Проверка загрузки токена
+if not TELEGRAM_TOKEN:
+    raise ValueError("❌ TELEGRAM_BOT_TOKEN не найден в переменных окружения")
 
-# Инициализация бота и OpenAI
+print("✅ TELEGRAM_TOKEN загружен")
+
+# Инициализация бота и Flask
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-openai.api_key = OPENAI_API_KEY
 app = Flask(__name__)
 
-# Обработка входящих сообщений
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    bot.send_chat_action(message.chat.id, "typing")
-
-    # Создание Thread и отправка запроса к OpenAI Assistant
-    thread = openai.beta.threads.create()
-    openai.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=message.text,
-    )
-    run = openai.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=ASSISTANT_ID,
-    )
-
-    # Ожидание завершения выполнения
-    while True:
-        run_status = openai.beta.threads.runs.retrieve(
-            thread_id=thread.id,
-            run_id=run.id,
-        )
-        if run_status.status == "completed":
-            break
-
-    # Получение и отправка ответа
-    messages = openai.beta.threads.messages.list(thread_id=thread.id)
-    for msg in reversed(messages.data):
-        if msg.role == "assistant":
-            response = msg.content[0].text.value
-            bot.reply_to(message, response)
-            break
-
-# Обработка Webhook
 @app.route("/", methods=["POST"])
 def webhook():
-    json_str = request.get_data().decode("UTF-8")
-    update = telebot.types.Update.de_json(json_str)
-    bot.process_new_updates([update])
-    return "!", 200
+    try:
+        json_string = request.get_data().decode("utf-8")
+        print("[DEBUG] Raw JSON from Telegram:")
+        print(json_string)
 
-# Запуск Flask-приложения для Render
+        update = telebot.types.Update.de_json(json.loads(json_string))
+        print("[DEBUG] Update parsed, calling process_new_updates")
+
+        bot.process_new_updates([update])
+    except Exception as e:
+        print(f"[ERROR in webhook] {e}")
+    return "OK", 200
+
+# Простой хендлер — отвечает на любое сообщение
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    print(f"[HANDLER] Message received from {message.chat.id}: {message.text}")
+    bot.send_message(message.chat.id, f"Ты написал: {message.text}")
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Render требует PORT
+    port = int(os.environ.get("PORT", 5000))  # по умолчанию порт 5000
+    print(f"✅ Starting app on port {port}")
     app.run(host="0.0.0.0", port=port)
